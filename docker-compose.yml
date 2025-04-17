@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  telegram-bot:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./bot:/app              # Код бота
+      - ./data:/app/data        # Данные (active_users.json)
+    restart: unless-stopped
