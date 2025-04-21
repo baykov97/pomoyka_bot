@@ -422,9 +422,9 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         random_number = random.randint(start, end)
 
         # Отправляем результат пользователю
-        await update.message.reply_text(f"🎲 Результат: {random_number}")
+        await update.message.reply_text(f"{random_number}")
     except ValueError:
-        await update.message.reply_text("Ошибка: убедитесь, что вы ввели числа в правильном формате.")
+        await update.message.reply_text("Ошибка: убедитесь, что вы ввели числа в правильном формате(/roll X-Y)")
     except Exception as e:
         logging.error(f"Ошибка при выполнении команды /roll: {e}")
         await update.message.reply_text("Произошла ошибка. Попробуйте снова.")
