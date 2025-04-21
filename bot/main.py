@@ -382,6 +382,52 @@ async def eball(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logging.error(f"Ошибка при выполнении команды /eball: {e}")
         await update.message.reply_text("Произошла ошибка при выполнении команды.")
 
+async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обработчик команды /roll.
+    Возвращает случайное число в заданном диапазоне или от 1 до 100 по умолчанию.
+    """
+    try:
+        # Проверяем, активен ли бот
+        if not bot_active:
+            await update.message.reply_text("Бот временно неактивен. Попробуйте позже.")
+            return
+
+        # Проверяем, является ли это сообщение накопившимся
+        message_time = update.message.date
+        if message_time < bot_start_time:
+            logging.info(f"Игнорируем накопившееся /eball сообщение от {update.message.from_user.first_name}")
+            return
+
+        # Получаем текст сообщения пользователя
+        user_input = update.message.text.strip()
+
+        # Проверяем, есть ли параметры после команды /roll
+        if len(user_input.split()) > 1:
+            # Извлекаем диапазон из сообщения
+            range_part = user_input.split(maxsplit=1)[1]
+            if '-' in range_part:
+                start, end = map(int, range_part.split('-'))
+                if start > end:
+                    await update.message.reply_text("Ошибка: начальное число должно быть меньше конечного.")
+                    return
+            else:
+                await update.message.reply_text("Неверный формат диапазона. Используйте /roll X-Y.")
+                return
+        else:
+            # Если диапазон не указан, используем значения по умолчанию
+            start, end = 1, 100
+
+        # Генерируем случайное число в указанном диапазоне
+        random_number = random.randint(start, end)
+
+        # Отправляем результат пользователю
+        await update.message.reply_text(f"🎲 Результат: {random_number}")
+    except ValueError:
+        await update.message.reply_text("Ошибка: убедитесь, что вы ввели числа в правильном формате.")
+    except Exception as e:
+        logging.error(f"Ошибка при выполнении команды /roll: {e}")
+        await update.message.reply_text("Произошла ошибка. Попробуйте снова.")
 
 async def main() -> None:
     global bot_active, bot_start_time
@@ -395,6 +441,7 @@ async def main() -> None:
         app.add_handler(CommandHandler("check_all", check_all))  # Добавляем обработчик команды /check_all
         app.add_handler(CommandHandler("voice", transcribe_voice))  # Добавляем обработчик команды /voice
         app.add_handler(CommandHandler("eball", eball))  # Добавляем обработчик команды /eball
+        app.add_handler(CommandHandler("roll", roll))  # Добавляем обработчик команды /roll
         app.add_handler(MessageHandler(filters.VOICE, voice_handler))  # Добавляем обработчик голосовых сообщений
         app.add_handler(MessageHandler(filters.ALL, handle_message))  # Обрабатываем все сообщения
 
