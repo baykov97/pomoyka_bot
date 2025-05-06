@@ -4,9 +4,9 @@ import json
 import os
 import nest_asyncio
 from datetime import datetime, timezone
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, JobQueue
 from pydub import AudioSegment
 import speech_recognition as sr
 import random
@@ -155,59 +155,129 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # Функция для команды /tag_all
+# Функция для команды /tag_all с подтверждением и таймером
 async def tag_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        # Проверяем, является ли это сообщение накопившимся
         message_time = update.message.date
         if message_time < bot_start_time:
             logging.info(f"Игнорируем накопившееся /tag_all сообщение от {update.message.from_user.first_name}")
             return
 
         chat_id = str(update.effective_chat.id)
+        user_id = update.effective_user.id
 
-        # Проверяем, есть ли активные пользователи для этого чата
+        # Проверяем, есть ли активные пользователи
         if chat_id not in chat_data or not chat_data[chat_id]:
             await update.message.reply_text("Никто не взаимодействовал с ботом.")
             return
 
-        mention_text = ""
-        errors_count = 0  # Для подсчета ошибок при получении участников
+        # Сохраняем данные в контексте пользователя
+        context.user_data["pending_tag"] = {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "timestamp": datetime.now(timezone.utc),
+        }
 
-        # Проходим по списку участников чата
-        for member in chat_data[chat_id]:
-            try:
-                user_id = member["id"]
-                nickname = member["nickname"]
-                first_name = member["first_name"]
+        # Создаем кнопки
+        keyboard = [
+            [InlineKeyboardButton("Подтвердить", callback_data="confirm_tag"),
+             InlineKeyboardButton("Отмена", callback_data="cancel_tag")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-                if not nickname and not first_name:
-                    # Если first_name не задан, получаем его данные из Telegram
-                    user_info = await context.bot.get_chat_member(update.effective_chat.id, user_id)
-                    first_name = user_info.user.first_name
-                    member["first_name"] = first_name
-                    save_data()
+        # Отправляем сообщение с кнопками
+        sent_message = await update.message.reply_text(
+            "Вы уверены, что хотите упомянуть всех пользователей?",
+            reply_markup=reply_markup
+        )
 
-                # Используем nickname, если он задан, иначе first_name
-                display_name = nickname if nickname else first_name
-                mention_text += f"[{display_name}](tg://user?id={user_id}) "
-            except Exception as e:
-                logging.error(f"Ошибка при получении участника {user_id}: {e}")
-                errors_count += 1
+        # Сохраняем ID сообщения, чтобы потом его обновить
+        context.user_data["pending_tag"]["message_id"] = sent_message.message_id
 
-        if errors_count > 0:
-            logging.warning(f"Не удалось получить {errors_count} участников из {len(chat_data[chat_id])}.")
+        # Устанавливаем таймер на удаление запроса через 15 сек
+        context.job_queue.run_once(expire_tag_confirmation, 15, user_id=user_id)
 
-        # Проверка длины строки
-        if len(mention_text) > 4096:
-            await update.message.reply_text("Слишком много участников для упоминания в одном сообщении.")
-        elif mention_text:
-            await update.message.reply_text(mention_text, parse_mode=ParseMode.MARKDOWN)
-        else:
-            await update.message.reply_text("Не удалось упомянуть участников.")
     except Exception as e:
         logging.error(f"Ошибка при выполнении команды /tag_all: {e}")
         await update.message.reply_text("Произошла ошибка при выполнении команды.")
 
+
+# Обработчик нажатия кнопок
+async def handle_tag_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    user_data = context.user_data.get("pending_tag")
+    if not user_data:
+        await query.edit_message_text("Запрос истёк или был отменён.")
+        return
+
+    now = datetime.now(timezone.utc)
+    if (now - user_data["timestamp"]).total_seconds() > 15:
+        await query.edit_message_text("Время подтверждения истекло.")
+        context.user_data.pop("pending_tag", None)
+        return
+
+    if query.data == "confirm_tag":
+        await execute_tag_all(query, context, user_data)
+    elif query.data == "cancel_tag":
+        await query.edit_message_text("Действие отменено.")
+        context.user_data.pop("pending_tag", None)
+
+
+# Выполняет тег всех участников
+async def execute_tag_all(query, context, user_data):
+    chat_id = user_data["chat_id"]
+    mention_text = ""
+    errors_count = 0
+
+    for member in chat_data.get(chat_id, []):
+        try:
+            user_id_member = member["id"]
+            nickname = member["nickname"]
+            first_name = member.get("first_name")
+
+            if not nickname and not first_name:
+                user_info = await context.bot.get_chat_member(int(chat_id), user_id_member)
+                first_name = user_info.user.first_name
+                member["first_name"] = first_name
+                save_data()
+
+            display_name = nickname if nickname else first_name
+            mention_text += f"[{display_name}](tg://user?id={user_id_member}) "
+        except Exception as e:
+            logging.error(f"Ошибка при получении участника {user_id_member}: {e}")
+            errors_count += 1
+
+    if len(mention_text) > 4096:
+        await query.edit_message_text("Слишком много участников для упоминания в одном сообщении.")
+    elif mention_text:
+        await query.edit_message_text("Упоминаю всех участников...")
+        await context.bot.send_message(chat_id=int(chat_id), text=mention_text, parse_mode=ParseMode.MARKDOWN)
+    else:
+        await query.edit_message_text("Не удалось упомянуть участников.")
+
+    context.user_data.pop("pending_tag", None)
+
+
+# Очистка истёкшего запроса
+async def expire_tag_confirmation(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    user_data = context.user_data.get("pending_tag")
+
+    if user_data and user_data["user_id"] == job.user_id:
+        try:
+            chat_id = user_data["chat_id"]
+            message_id = user_data["message_id"]
+            await context.bot.edit_message_text(
+                chat_id=int(chat_id),
+                message_id=message_id,
+                text="Время подтверждения истекло."
+            )
+        except Exception as e:
+            logging.error(f"Ошибка при обновлении истёкшего сообщения: {e}")
+        finally:
+            context.user_data.pop("pending_tag", None)
 
 # Функция для команды /check_all
 async def check_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -514,7 +584,7 @@ async def main() -> None:
         app.add_handler(CommandHandler("nick", set_nickname))
         app.add_handler(MessageHandler(filters.VOICE, voice_handler))  # Добавляем обработчик голосовых сообщений
         app.add_handler(MessageHandler(filters.ALL, handle_message))  # Обрабатываем все сообщения
-
+        app.add_handler(CallbackQueryHandler(handle_tag_confirmation))
         # Устанавливаем флаг активности бота и время старта
         bot_active = True
         bot_start_time = datetime.now(timezone.utc)
