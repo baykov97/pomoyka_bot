@@ -180,14 +180,14 @@ async def tag_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         # Создаем кнопки
         keyboard = [
-            [InlineKeyboardButton("Подтвердить", callback_data="confirm_tag"),
+            [InlineKeyboardButton("Да", callback_data="confirm_tag"),
              InlineKeyboardButton("Отмена", callback_data="cancel_tag")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Отправляем сообщение с кнопками
         sent_message = await update.message.reply_text(
-            "Вы уверены, что хотите упомянуть всех пользователей?",
+            "Оно тебе надо?",
             reply_markup=reply_markup
         )
 
@@ -252,7 +252,7 @@ async def execute_tag_all(query, context, user_data):
     if len(mention_text) > 4096:
         await query.edit_message_text("Слишком много участников для упоминания в одном сообщении.")
     elif mention_text:
-        await query.edit_message_text("Упоминаю всех участников...")
+        await query.edit_message_text("Это на твоей совести")
         await context.bot.send_message(chat_id=int(chat_id), text=mention_text, parse_mode=ParseMode.MARKDOWN)
     else:
         await query.edit_message_text("Не удалось упомянуть участников.")
