@@ -431,6 +431,7 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Произошла ошибка. Попробуйте снова.")
 
 async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logging.info("nickname")
     try:
         # Проверяем, является ли это сообщение накопившимся
         message_time = update.message.date
