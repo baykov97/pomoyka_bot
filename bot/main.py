@@ -511,9 +511,9 @@ async def main() -> None:
         app.add_handler(CommandHandler("voice", transcribe_voice))  # Добавляем обработчик команды /voice
         app.add_handler(CommandHandler("eball", eball))  # Добавляем обработчик команды /eball
         app.add_handler(CommandHandler("roll", roll))  # Добавляем обработчик команды /roll
+        app.add_handler(CommandHandler("nick", set_nickname))
         app.add_handler(MessageHandler(filters.VOICE, voice_handler))  # Добавляем обработчик голосовых сообщений
         app.add_handler(MessageHandler(filters.ALL, handle_message))  # Обрабатываем все сообщения
-        app.add_handler(CommandHandler("nickname", set_nickname))
 
         # Устанавливаем флаг активности бота и время старта
         bot_active = True
