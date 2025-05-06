@@ -103,7 +103,8 @@ async def add_user(update: Update) -> None:
             new_user = {
                 "id": user.id,
                 "first_name": user.first_name,
-                "nickname": ""  # Пустой никнейм по умолчанию
+                "nickname": "",  # Пустой никнейм по умолчанию
+                "isAdmin": 0
             }
             chat_data[chat_id].append(new_user)
             logging.info(f"Добавлен пользователь: {user.id} ({user.first_name}) в чат {chat_id}")
@@ -429,6 +430,73 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logging.error(f"Ошибка при выполнении команды /roll: {e}")
         await update.message.reply_text("Произошла ошибка. Попробуйте снова.")
 
+async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        # Проверяем, является ли это сообщение накопившимся
+        message_time = update.message.date
+        if message_time < bot_start_time:
+            logging.info(f"Игнорируем накопившееся /nickname сообщение от {update.message.from_user.first_name}")
+            return
+
+        chat_id = str(update.effective_chat.id)
+        user = update.message.from_user
+
+        # Проверяем, есть ли пользователь в списке участников
+        if chat_id not in chat_data:
+            await update.message.reply_text("Нет данных о чате.")
+            return
+
+        # Находим пользователя в chat_data
+        user_entry = None
+        for member in chat_data[chat_id]:
+            if member["id"] == user.id:
+                user_entry = member
+                break
+
+        if not user_entry:
+            await update.message.reply_text("Вы не зарегистрированы в системе.")
+            return
+
+        # Проверяем, имеет ли пользователь право на установку никнейма
+        if user_entry.get("isAdmin", 0) != 1:
+            await update.message.reply_text("Ты хуй без прав")
+            return
+
+        # Проверяем, что команда — ответ на другое сообщение
+        if not update.message.reply_to_message:
+            await update.message.reply_text("Эта команда должна быть ответом на сообщение пользователя.")
+            return
+
+        target_user = update.message.reply_to_message.from_user
+        nickname_match = context.args
+
+        if not nickname_match:
+            await update.message.reply_text("Укажите никнейм после команды. Пример: /nickname НовыйНик")
+            return
+
+        new_nickname = " ".join(nickname_match)
+
+        # Ищем целевого пользователя в chat_data
+        target_found = False
+        for member in chat_data[chat_id]:
+            if member["id"] == target_user.id:
+                member["nickname"] = new_nickname
+                target_found = True
+                break
+
+        if not target_found:
+            await update.message.reply_text("Целевой пользователь не найден в базе.")
+            return
+
+        # Сохраняем обновлённые данные
+        save_data()
+
+        await update.message.reply_text(f"Пользователю {target_user.first_name} установлен никнейм: {new_nickname}")
+
+    except Exception as e:
+        logging.error(f"Ошибка при выполнении команды /nickname: {e}")
+        await update.message.reply_text("Произошла ошибка при изменении никнейма.")
+
 async def main() -> None:
     global bot_active, bot_start_time
 
@@ -444,6 +512,7 @@ async def main() -> None:
         app.add_handler(CommandHandler("roll", roll))  # Добавляем обработчик команды /roll
         app.add_handler(MessageHandler(filters.VOICE, voice_handler))  # Добавляем обработчик голосовых сообщений
         app.add_handler(MessageHandler(filters.ALL, handle_message))  # Обрабатываем все сообщения
+        app.add_handler(CommandHandler("nickname", set_nickname))
 
         # Устанавливаем флаг активности бота и время старта
         bot_active = True
