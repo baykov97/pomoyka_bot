@@ -465,14 +465,14 @@ async def set_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Проверяем, что команда — ответ на другое сообщение
         if not update.message.reply_to_message:
-            await update.message.reply_text("Эта команда должна быть ответом на сообщение пользователя.")
+            await update.message.reply_text("Эта команда должна быть ответом на сообщение.")
             return
 
         target_user = update.message.reply_to_message.from_user
         nickname_match = context.args
 
         if not nickname_match:
-            await update.message.reply_text("Укажите никнейм после команды. Пример: /nickname НовыйНик")
+            await update.message.reply_text("Укажите никнейм")
             return
 
         new_nickname = " ".join(nickname_match)
